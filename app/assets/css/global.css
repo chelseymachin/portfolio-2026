@@ -1,0 +1,31 @@
+:root {
+    --rose: #e998a7;
+    --blush: #fadfe8;
+    --dusty-petal: #d4869a;
+    --cream: #fdf6f4;
+    --quest-pink: #e8929f;
+    --rosewood: #5c3a3a;
+    --mauve: #9e6e6e;
+    --glass: #fadfe8;
+}
+
+html {
+    background-image: url('/background.png');
+    background-repeat: repeat;
+    background-size: 720px 480px;
+}
+
+body {
+    font-family: 'Gothic A1', sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--rosewood);   
+}
+
+h1, h2, h3, h4 {
+    font-family: 'Playfair Display', serif;
+}
+
+* {
+    box-sizing: border-box;
+}

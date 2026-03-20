@@ -5,7 +5,15 @@ export default defineNuxtConfig({
   nitro: {
     preset: 'static'
   },
-  modules: ['@nuxt/content', '@nuxtjs/google-fonts'],
+  app: {
+    head: {
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }
+      ]
+    }
+  },
+  css: ['~/assets/css/global.css'],
+  modules: ['@nuxt/content', '@nuxtjs/google-fonts', '@nuxt/icon'],
   googleFonts: {
     families: {
       "Gothic A1": {

@@ -1,12 +1,13 @@
 :root {
     --rose: #e998a7;
     --blush: #fadfe8;
+    --blush-lighter: rgba(250, 223, 232, 0.95);
     --dusty-petal: #d4869a;
     --cream: #fdf6f4;
     --quest-pink: #e8929f;
+    --quest-pink-lighter: rgba(232, 146, 159, 0.95);
     --rosewood: #5c3a3a;
     --mauve: #9e6e6e;
-    --glass: #fadfe8;
 }
 
 html {

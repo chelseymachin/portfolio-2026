@@ -73,13 +73,13 @@ nav {
   z-index: 100;
   height: 72px;
   padding: 0 20px;
-  background-color: var(--glass);
+  background-color: var(--blush-lighter);
   backdrop-filter: blur(12px);
   transition: transform 0.3s ease, background-color 0.4s ease, border-color 0.4s ease;
 }
 
 nav.nav--quests {
-  background-color: var(--quest-pink);
+  background-color: var(--quest-pink-lighter);
 }
 
 .left-nav {

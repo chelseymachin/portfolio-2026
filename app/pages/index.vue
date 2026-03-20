@@ -1,62 +1,61 @@
 <template>
   <div v-if="currentView === 'work'" class="work-layout">
     <div class="work-bg">
-        <LeftPanel>
-            <div class="left-content">
-                <h1 class="name">Chelsey<br /><em>Machin</em></h1>
-                <p class="eyelash">Software Engineer</p>
-                <p class="bio">
-                Building thoughtful, high-quality software with a genuine love for
-                craft. Currently working on a handful of side projects
-                that refuse to stay small.
-                </p>
+      <LeftPanel>
+        <div class="left-content">
+          <h1 class="name">Chelsey<br /><em>Machin</em></h1>
+          <p class="eyelash">Software Engineer</p>
+          <p class="bio">
+            Building thoughtful, high-quality software with a genuine love for
+            craft. Currently working on a handful of side projects
+            that refuse to stay small.
+          </p>
 
-                <div class="exp-section">
-                <p class="section-label">Experience</p>
-                <div class="exp-item">
-                    <span class="exp-title">Full-Stack Software Developer</span>
-                    <div class="exp-meta">
-                    <span>Burkhart Dental</span>
-                    <span>2024 – Present</span>
-                    </div>
-                </div>
-                <div class="exp-item">
-                    <span class="exp-title">Software Engineer</span>
-                    <div class="exp-meta">
-                    <span>Jamf</span>
-                    <span>2022 – 2024</span>
-                    </div>
-                </div>
-                </div>
-
-                <div class="stack-section">
-                <p class="section-label">Stack</p>
-                <div class="tags">
-                    <span class="tag">Vue 3 + Vite</span>
-                    <span class="tag">.NET / C#</span>
-                    <span class="tag">TypeScript + JavaScript</span>
-                    <span class="tag">React</span>
-                    <span class="tag">AWS</span>
-                </div>
-                </div>
-
-                <a class="resume-btn" href="/resume.pdf" target="_blank">
-                ↓ Download Resume
-                </a>
+          <div class="exp-section">
+            <p class="section-label">Experience</p>
+            <div class="exp-item">
+              <span class="exp-title">Full-Stack Software Developer</span>
+              <div class="exp-meta">
+                <span>Burkhart Dental</span>
+                <span>2024 – Present</span>
+              </div>
             </div>
-        </LeftPanel>
-
-        <RightPanel>
-            <div class="right-content">
-                <div class="section-header">
-                <h2 class="section-title">Selected Projects</h2>
-                <p class="section-sub">A few things I've built that I'm proud of</p>
-                </div>
-
-                <p class="placeholder">Project cards coming </p>
+            <div class="exp-item">
+              <span class="exp-title">Software Engineer</span>
+              <div class="exp-meta">
+                <span>Jamf</span>
+                <span>2022 – 2024</span>
+              </div>
             </div>
-        </RightPanel>
-      </div>
+          </div>
+
+          <div class="stack-section">
+            <p class="section-label">Stack</p>
+            <div class="tags">
+              <span class="tag">Vue 3 + Vite</span>
+              <span class="tag">.NET / C#</span>
+              <span class="tag">TypeScript + JavaScript</span>
+              <span class="tag">React</span>
+              <span class="tag">AWS</span>
+            </div>
+          </div>
+
+          <a class="resume-btn" href="/resume.pdf" target="_blank">
+            ↓ Download Resume
+          </a>
+        </div>
+      </LeftPanel>
+
+      <RightPanel>
+        <div class="right-content">
+          <div class="section-header">
+            <h2 class="section-title">Selected Projects</h2>
+            <p class="section-sub">A few things I've built that I'm proud of</p>
+          </div>
+          <p class="placeholder">Project cards coming soon</p>
+        </div>
+      </RightPanel>
+    </div>
   </div>
 
   <div v-else class="quests-layout">
@@ -68,9 +67,14 @@
       </p>
     </div>
 
-    <div class="blog-grid">
-      <p class="placeholder">Blog cards coming </p>
+    <div v-if="posts && posts.length > 0" class="blog-grid">
+      <BlogCard
+        v-for="post in posts"
+        :key="post.stem"
+        :post="post"
+      />
     </div>
+    <p v-else class="placeholder">No posts yet.</p>
   </div>
 </template>
 
@@ -78,21 +82,25 @@
 import { useView } from '~/composables/useView'
 
 const { currentView } = useView()
+
+const { data: posts } = await useAsyncData('posts', () =>
+  queryCollection('posts')
+    .order('date', 'DESC')
+    .all()
+)
 </script>
 
 <style scoped>
-/* ── Work layout ── */
 .work-layout {
   display: flex;
   min-height: calc(100vh - 72px);
 }
 
 .work-bg {
-    display: flex;
-    width: 100%;
+  display: flex;
+  width: 100%;
 }
 
-/* Left panel inner content */
 .left-content {
   display: flex;
   flex-direction: column;
@@ -120,14 +128,6 @@ const { currentView } = useView()
 .name em {
   font-style: italic;
   color: var(--dusty-petal);
-}
-
-.role {
-  font-family: 'Playfair Display', serif;
-  font-size: 14px;
-  font-style: italic;
-  color: var(--mauve);
-  margin-bottom: 20px;
 }
 
 .bio {
@@ -217,7 +217,6 @@ const { currentView } = useView()
   color: var(--cream);
 }
 
-/* Right panel inner content */
 .right-content {
   max-width: 680px;
 }
@@ -240,7 +239,6 @@ const { currentView } = useView()
   color: var(--mauve);
 }
 
-/* ── Quests layout ── */
 .quests-layout {
   max-width: 900px;
   margin: 0 auto;
@@ -280,7 +278,6 @@ const { currentView } = useView()
   gap: 16px;
 }
 
-/* ── Shared ── */
 .placeholder {
   font-family: 'Gothic A1', sans-serif;
   font-size: 12px;

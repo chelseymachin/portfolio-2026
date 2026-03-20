@@ -11,7 +11,7 @@
 }
 
 html {
-    background-image: url('/background.png');
+    background-image: url('/images/background.png');
     background-repeat: repeat;
     background-size: 720px 480px;
 }

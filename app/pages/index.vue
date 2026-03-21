@@ -88,6 +88,11 @@ const { data: posts } = await useAsyncData('posts', () =>
     .order('date', 'DESC')
     .all()
 )
+
+if (posts.value) {
+  prerenderRoutes(posts.value.map(post => post.path))
+}
+
 </script>
 
 <style scoped>

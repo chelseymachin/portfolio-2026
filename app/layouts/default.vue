@@ -22,6 +22,8 @@ const isQuests = computed(() => currentView.value === 'quests')
   background-repeat: repeat;
   background-size: 80px 80px;
   transition: background 0.4s ease;
+  width: 90%;
+  margin: 0 auto;
 }
 
 .layout--work {

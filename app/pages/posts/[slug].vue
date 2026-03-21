@@ -43,11 +43,9 @@ definePageMeta({
 
 const slug = useRoute().params.slug as string
 
-const { data: post } = await useAsyncData(`post-${slug}`, () =>
-  queryCollection('posts')
-    .where('path', '=', `/posts/${slug}`)
-    .first()
-)
+const { data: post } = await useAsyncData(`post-${slug}`, () => {
+  return queryCollection('posts').path(`/posts/${slug}`).first()
+})
 
 const formattedDate = computed(() => {
   if (!post.value?.date) return ''

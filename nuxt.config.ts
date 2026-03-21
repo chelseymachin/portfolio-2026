@@ -3,7 +3,14 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
   nitro: {
-    preset: 'static'
+    preset: 'static',
+    prerender: {
+      crawlLinks: true,
+      routes: ['/']
+    }
+  },
+  routeRules: {
+    '/posts/**': { prerender: true }
   },
   app: {
     head: {

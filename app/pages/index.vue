@@ -12,19 +12,12 @@
           </p>
 
           <div class="exp-section">
-            <p class="section-label">Experience</p>
+            <p class="section-label">Current Role</p>
             <div class="exp-item">
-              <span class="exp-title">Full-Stack Software Developer</span>
+              <span class="exp-title">Software Developer II</span>
               <div class="exp-meta">
                 <span>Burkhart Dental</span>
                 <span>2024 – Present</span>
-              </div>
-            </div>
-            <div class="exp-item">
-              <span class="exp-title">Software Engineer</span>
-              <div class="exp-meta">
-                <span>Jamf</span>
-                <span>2022 – 2024</span>
               </div>
             </div>
           </div>
@@ -32,9 +25,14 @@
           <div class="stack-section">
             <p class="section-label">Stack</p>
             <div class="tags">
-              <span class="tag">Vue + React + Angular</span>
-              <span class="tag">C# / .NET  + Go</span>
-              <span class="tag">TypeScript + JavaScript</span>
+              <span class="tag">Vue</span>
+              <span class="tag">React</span>
+              <span class="tag">Angular</span>
+              <span class="tag">C# / .NET</span>
+              <span class="tag">Python</span>
+              <span class="tag">Go</span>
+              <span class="tag">TypeScript</span>
+              <span class="tag">JavaScript</span>
               <span class="tag">AWS</span>
             </div>
           </div>

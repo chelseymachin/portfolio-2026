@@ -22,7 +22,7 @@ const isQuests = computed(() => currentView.value === 'quests')
   background-repeat: repeat;
   background-size: 80px 80px;
   transition: background 0.4s ease;
-  width: 90%;
+  width: 75%;
   margin: 0 auto;
 }
 
@@ -56,6 +56,12 @@ const isQuests = computed(() => currentView.value === 'quests')
 
   .body-wrapper--quests {
     padding: 24px 16px;
+  }
+}
+
+@media (min-width: 1850px) {
+  .layout {
+    width: 60%;
   }
 }
 </style>

@@ -32,10 +32,9 @@
           <div class="stack-section">
             <p class="section-label">Stack</p>
             <div class="tags">
-              <span class="tag">Vue 3 + Vite</span>
-              <span class="tag">.NET / C#</span>
+              <span class="tag">Vue + React + Angular</span>
+              <span class="tag">C# / .NET  + Go</span>
               <span class="tag">TypeScript + JavaScript</span>
-              <span class="tag">React</span>
               <span class="tag">AWS</span>
             </div>
           </div>

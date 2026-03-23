@@ -28,7 +28,6 @@
         <span v-show="currentView === 'quests'" class="tab-label">Side Quests</span>
       </button>
     </div>
-
     <div class="right-nav">
       <ul>
         <li><a href="https://www.linkedin.com/in/chelseymachin/" target="_blank">LinkedIn</a></li>
@@ -36,16 +35,33 @@
         <li><a href="mailto:your@email.com">Contact</a></li>
       </ul>
     </div>
+    <!-- mobile hamburger -->
+    <button
+      class="hamburger"
+      :class="{ 'hamburger--open': menuOpen }"
+      @click="menuOpen = !menuOpen"
+      aria-label="Menu"
+    >
+      <span class="bar" />
+      <span class="bar" />
+      <span class="bar" />
+    </button>
+    <!-- mobile dropdown -->
+    <div class="mobile-menu" :class="{ 'mobile-menu--open': menuOpen }">
+      <a href="https://www.linkedin.com/in/chelseymachin/" target="_blank" @click="menuOpen = false">LinkedIn</a>
+      <a href="https://resume.url" target="_blank" @click="menuOpen = false">Resume</a>
+      <a href="mailto:your@email.com" @click="menuOpen = false">Contact</a>
+    </div>
   </nav>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useView } from '~/composables/useView'
 
 const { currentView, setView } = useView()
-
 const isQuests = computed(() => currentView.value === 'quests')
+const menuOpen = ref(false)
 
 let lastScrollY = 0
 
@@ -55,6 +71,7 @@ onMounted(() => {
     const current = window.scrollY
     if (current > lastScrollY && current > 10) {
       nav.style.transform = 'translateY(-100%)'
+      menuOpen.value = false
     } else {
       nav.style.transform = 'translateY(0)'
     }
@@ -75,17 +92,25 @@ nav {
   padding: 0 20px;
   background-color: var(--blush-lighter);
   backdrop-filter: blur(12px);
-  transition: transform 0.3s ease, background-color 0.4s ease, border-color 0.4s ease;
+  transition: transform 0.3s ease, background-color 0.4s ease;
 }
 
 nav.nav--quests {
   background-color: var(--quest-pink-lighter);
 }
 
-.left-nav {
+.nav-home-link {
   display: flex;
   align-items: center;
   gap: 8px;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.left-nav {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .nav-logo-icon {
@@ -106,6 +131,14 @@ nav.nav--quests .nav-name {
   color: var(--cream);
 }
 
+.nav-home-link:hover .nav-name {
+  color: var(--dusty-petal);
+}
+
+nav.nav--quests .nav-home-link:hover .nav-name {
+  color: rgba(255, 255, 255, 0.8);
+}
+
 .center-nav {
   display: flex;
   gap: 3px;
@@ -113,6 +146,7 @@ nav.nav--quests .nav-name {
   border-radius: 24px;
   padding: 3px;
   transition: background-color 0.4s ease;
+  flex-shrink: 0;
 }
 
 nav.nav--quests .center-nav {
@@ -134,7 +168,7 @@ nav.nav--quests .center-nav {
   cursor: pointer;
   background: transparent;
   color: var(--rosewood);
-  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, padding 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 nav.nav--quests .tab-btn {
@@ -192,5 +226,158 @@ nav.nav--quests .right-nav a {
 
 nav.nav--quests .right-nav a:hover {
   color: var(--cream);
+}
+
+/* hamburger — hidden on desktop */
+.hamburger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  transition: background-color 0.2s ease;
+}
+
+.hamburger:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.bar {
+  display: block;
+  width: 20px;
+  height: 1.5px;
+  background-color: var(--rosewood);
+  border-radius: 2px;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+nav.nav--quests .bar {
+  background-color: var(--cream);
+}
+
+/* X state when open */
+.hamburger--open .bar:nth-child(1) {
+  transform: translateY(6.5px) rotate(45deg);
+}
+
+.hamburger--open .bar:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger--open .bar:nth-child(3) {
+  transform: translateY(-6.5px) rotate(-45deg);
+}
+
+/* mobile dropdown menu */
+.mobile-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  flex-direction: column;
+  background-color: var(--blush-lighter);
+  backdrop-filter: blur(12px);
+  border-top: 0.5px solid rgba(212, 134, 154, 0.2);
+  padding: 8px 0;
+  z-index: 99;
+}
+
+nav.nav--quests .mobile-menu {
+  background-color: var(--quest-pink-lighter);
+  border-top-color: rgba(255, 255, 255, 0.15);
+}
+
+.mobile-menu--open {
+  display: flex;
+}
+
+.mobile-menu a {
+  font-family: 'Gothic A1', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--rosewood);
+  text-decoration: none;
+  padding: 14px 20px;
+  border-bottom: 0.5px solid rgba(212, 134, 154, 0.12);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.mobile-menu a:last-child {
+  border-bottom: none;
+}
+
+.mobile-menu a:hover {
+  background: rgba(255, 255, 255, 0.3);
+  color: var(--dusty-petal);
+}
+
+nav.nav--quests .mobile-menu a {
+  color: var(--cream);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+nav.nav--quests .mobile-menu a:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* ── Mobile breakpoint ── */
+@media (max-width: 768px) {
+  nav {
+    height: auto;
+    min-height: 60px;
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .right-nav {
+    display: none;
+  }
+
+  .hamburger {
+    display: flex;
+    margin-left: auto;
+  }
+
+  .center-nav {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.3);
+    flex-shrink: 1;
+    margin-top: 0.5rem;
+  }
+
+  nav.nav--quests .center-nav {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  .tab-btn {
+    flex: 1;
+    justify-content: center;
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  .nav-name {
+    font-size: 18px;
+  }
+
+  .nav-logo-icon svg {
+    width: 28px;
+    height: 28px;
+  }
 }
 </style>

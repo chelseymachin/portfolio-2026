@@ -64,18 +64,33 @@ const isQuests = computed(() => currentView.value === 'quests')
 const menuOpen = ref(false)
 
 let lastScrollY = 0
+let ticking = false
 
 onMounted(() => {
   const nav = document.querySelector('nav') as HTMLElement
+
   window.addEventListener('scroll', () => {
-    const current = window.scrollY
-    if (current > lastScrollY && current > 10) {
-      nav.style.transform = 'translateY(-100%)'
-      menuOpen.value = false
-    } else {
-      nav.style.transform = 'translateY(0)'
-    }
-    lastScrollY = current
+    if (ticking) return
+
+    window.requestAnimationFrame(() => {
+      const current = Math.max(0, window.scrollY)
+      if (Math.abs(current - lastScrollY) < 4) {
+        ticking = false
+        return
+      }
+
+      if (current > lastScrollY && current > 72) {
+        nav.style.transform = 'translateY(-100%)'
+        menuOpen.value = false
+      } else if (current < lastScrollY) {
+        nav.style.transform = 'translateY(0)'
+      }
+
+      lastScrollY = current
+      ticking = false
+    })
+
+    ticking = true
   }, { passive: true })
 })
 </script>

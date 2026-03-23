@@ -25,6 +25,8 @@ function goToQuests() {
 .post-layout {
   min-height: 100vh;
   background-color: var(--blush);
+  width: 75%;
+  margin: 0 auto;
 }
 
 .post-nav {
@@ -67,6 +69,12 @@ function goToQuests() {
 
   .post-main {
     padding: 40px 20px 64px;
+  }
+}
+
+@media (min-width: 1850px) {
+  .post-layout {
+    width: 60%;
   }
 }
 </style>

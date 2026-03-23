@@ -57,10 +57,9 @@
 
   <div v-else class="quests-layout">
     <div class="quests-header">
-      <h1 class="quests-title">Side <em>Quests.</em></h1>
+      <h1 class="quests-title">Side <em>Quests</em></h1>
       <p class="quests-sub">
-        Things I built because I couldn't not build them. Some fully shipped,
-        some beautifully half-baked.
+        Writing about the projects I'm building, the problems I'm solving, and the dreams keeping me up at night.
       </p>
     </div>
 

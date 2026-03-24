@@ -1,216 +1,333 @@
 ---
 title: "Building SparkleTrack: A Hobby Developer's Issue Tracker"
-date: "2026-03-10"
-excerpt: "How I built a desktop issue tracker with Vue 3 and Electron, then rearchitected the entire backend when the release pipeline broke — and everything I learned along the way."
-tags: ["Electron", "Vue 3", "Drizzle ORM", "SQLite", "GitHub Actions"]
+date: "2026-03-09"
+excerpt: "How I built a desktop issue tracker with Vue 3 and Electron, rearchitected the entire backend when the release pipeline exploded, survived an IPC migration, and learned more about native modules than I ever wanted to know."
+tags: ["Electron", "Vue 3", "Drizzle ORM", "SQLite", "GitHub Actions", "IPC",]
 thumbnail: "/images/posts/sparkletrack-thumbnail.gif"
 ---
 
-*A deep dive into building a desktop app from scratch featuring Express backends, Electron nightmares, IPC migrations, and everything I learned along the way.*
+*A deep dive into building a desktop app from scratch — Express backends, Electron nightmares, IPC migrations, and everything I learned along the way.*
 
 ---
 
 **Why I Built This**
 
-Every hobby developer has the same problem: too many projects, too little structure. I had open tabs full of GitHub issues for projects I owned, Notion pages with half-finished to-do lists, and sticky notes I stopped looking at months ago. The irony of building an issue tracker to track my own issue-tracking chaos was not lost on me.
+Every hobby developer has the same problem: too many projects, too little structure. I had open GitHub tabs for repos I owned, Notion pages with half-finished to-do lists, and sticky notes I stopped looking at months ago. The irony of building an issue tracker to manage my own issue-tracking chaos is not lost on me, but here we are.
 
-I wanted something that felt like a *real* tool. Not a markdown file, not a Notion database, not a browser tab I'd forget to open. A desktop app. Something that lived on my taskbar, launched instantly, and felt like it was built for me. So I built SparkleTrack: a self-contained issue tracker for hobby developers, with a kanban board, project-scoped labels, activity feeds, and a soft pink aesthetic that makes it genuinely pleasant to open.
+I wanted something that felt like a *real* tool so not a markdown file, not a Notion database, not another browser tab I'd forget to open. A desktop app. Something that lived in my dock, launched instantly, and felt like it was actually built for me. So I built SparkleTrack: a self-contained issue tracker for hobby developers, with a kanban board, project-scoped labels, activity feeds, search, export, and a soft pink aesthetic that makes it genuinely pleasant to open. Think Linear, but cute, local, and with zero subscription fees.
 
-This is the story of how I built it, what went wrong (a lot), and what I'd do differently.
+This is the story of how I built it, what broke (a lot of things), and what I'd do differently.
 
-<img src="/images/posts/sparkletrack-01.png" alt="SparkleTrack main dashboard — project list and kanban overview" width="100%" height="100%" />
+<img src="/images/posts/sparkletrack-01.png" width="100%" height="100%" />
+<img src="/images/posts/sparkletrack-02.png" width="100%" height="100%" />
+<img src="/images/posts/sparkletrack-03.png" width="100%" height="100%" />
 
 ---
 
 **The Stack Decision**
 
-| Layer | Choice |
-|---|---|
-| Frontend | Vue 3 + Vite |
-| Database | better-sqlite3 |
-| ORM | Drizzle |
-| Testing | Vitest + ESLint |
-| Release | electron-builder + GitHub Actions |
+Before writing a single line, I had to figure out what I was actually building. The requirements were simple: a desktop app, local data storage, distributable to other hobby developers without them needing to touch a terminal.
 
-I knew from the start I wanted Vue 3 for the frontend. It's what I use at work and the Composition API fits how my brain thinks about state. Electron was the obvious choice for desktop distribution. It's the industry standard for this kind of app and I didn't want to learn Tauri from scratch on a hobby project.
+Here's where I landed:
 
-For the database, SQLite was a no-brainer. It's a file. It travels with the user. There's no server to provision, no connection string to configure. For a single-user desktop app, it's perfect. I picked Drizzle ORM over raw SQL because I wanted type safety and I'd been wanting to try it — and I'm glad I did. The query builder feels natural and the schema-as-code approach meant my database structure was always in sync with my TypeScript types.
+```
+✨ SparkleTrack Final Stack
 
-And of course, it had to be pink.
+┌──────────────────────────────────────────────────┐
+│  FRONTEND               │  ELECTRON LAYER        │
+│  Vue 3 + Vite           │  Electron 40           │
+│  Pinia stores           │  contextBridge + IPC   │
+│  Vue Router             │  better-sqlite3        │
+│  SCSS design tokens     │  Drizzle ORM           │
+│                         │                        │
+│  TOOLING                │  RELEASE               │
+│  Vitest                 │  electron-builder      │
+│  ESLint                 │  GitHub Actions CI/CD  │
+└──────────────────────────────────────────────────┘
+```
+
+Vue 3 was a no-brainer because it's what I use at work and the Composition API fits how my brain thinks about component state. Electron was the obvious choice for desktop distribution since it targets Windows, Mac, and Linux from one codebase and I didn't want to learn Tauri from scratch on a hobby project. SQLite was also an obvious choice. It's literally just a file, it travels with the user, and there's no database server to manage.
+
+The trickier decision was the ORM. I landed on Drizzle because it's lightweight, TypeScript-first, and the query builder feels close enough to raw SQL that you're never fighting the abstraction. (That said, Drizzle and Electron have a fun little relationship we'll get to.)
 
 ---
 
-**The Original Architecture: Express + Electron**
+**The Original Architecture (Before Things Got Interesting)**
 
-My first instinct was to structure the app as a monorepo with two packages: a frontend Vue app and a backend Express API. This felt familiar as it's essentially a web app architecture dropped into an Electron shell.
-
-```
-Electron Main Process
-      │
-      ▼
-Spawns child process
-      │
-      ▼
-Express Server (Node.js)       Vue 3 Frontend
-├── /api/projects       ◄────  axios calls
-├── /api/issues                via Vite proxy
-├── /api/labels
-├── /api/comments
-└── better-sqlite3 (DB)
-```
-
-The Express server would handle all the data logic, Drizzle would manage migrations and queries, and the Vue frontend would communicate with it over HTTP. Just like a normal web app. Electron was essentially a browser wrapper with a hidden local server running behind it.
-
-This worked great in development. Features came together quickly: projects with prefixes and color-coded icons, a kanban board with drag-and-drop reordering, labels, comments, an activity feed, full-text search, and a data export endpoint.
-
-<img src="/images/posts/sparkletrack-02.png" alt="SparkleTrack kanban board — issue cards with drag-and-drop columns" width="100%" height="100%" />
-
----
-
-**The Release Problem**
-
-Everything was working beautifully in dev. Then I tried to ship it.
-
-`electron-builder` packages your app into an installer, and that installer needs to be completely self-contained. My architecture had a fatal flaw: it was spawning a Node.js child process to run the Express server. In a packaged Electron app, `node` is not in the PATH. Electron ships its own Node runtime internally, but that runtime isn't available as a standalone binary you can spawn.
-
-The symptoms were baffling at first. On Mac, the app would open a blank window and silently do nothing. On Windows, it wouldn't even open. The GitHub Actions release builds would succeed, producing `.exe` and `.dmg` files, but the apps themselves were broken.
-
-After a lot of debugging the root cause became clear. The Express server was never starting because `spawn('node', ['server.js'])` was failing silently. No process, no API, no data.
-
-The fix required rethinking the entire backend architecture.
-
----
-
-**The Migration: Express → Electron IPC**
-
-Electron has a built-in solution for exactly this problem: IPC (Inter-Process Communication). Instead of HTTP requests to a separate server process, IPC lets the renderer send messages directly to the main process, which is already a Node.js environment with full filesystem access.
-
-**Before:**
-```
-Renderer  →  HTTP (axios)  →  Express Server (child process)  →  better-sqlite3
-```
-
-**After:**
-```
-Renderer  →  ipcRenderer.invoke()  →  Electron Main Process  →  better-sqlite3
-```
-
-The migration involved four key changes:
-
-**1. Moving the database into the main process.**
-Instead of the Express server opening the SQLite database, `electron/db.js` now initializes it directly using `app.getPath('userData')` the standard Electron path for user data that works correctly across all platforms and install locations.
-
-**2. Converting Express routes to IPC handlers.**
-Every route handler became an `ipcMain.handle()` call. A route like `GET /api/projects` became:
-
-```js
-ipcMain.handle('projects:getAll', () =>
-  db.select().from(projects).all()
-)
-```
-
-The logic was identical and only the transport layer changed.
-
-**3. Rewriting the preload script.**
-Electron's `contextBridge` securely exposes a `window.api` object to the renderer, with one method per IPC channel. The renderer never touches `ipcRenderer` directly. Now, it just calls `window.api.projects.getAll()`.
-
-**4. Replacing axios with an IPC wrapper.**
-Rather than rewriting every component that called the API, I replaced `axios.js` with a thin wrapper that matched the axios interface (`api.get()`, `api.post()`) but routed each call to the appropriate IPC channel. Every component kept working without changes.
-
-The new file structure after the migration:
+The initial version of SparkleTrack was a monorepo with two workspace packages:
 
 ```
 sparkletrack/
-├── .github/workflows/
-│   └── release.yml
+├── packages/
+│   ├── backend/           ← Express + better-sqlite3 + Drizzle
+│   │   ├── src/
+│   │   │   ├── db/
+│   │   │   │   ├── client.js
+│   │   │   │   ├── schema.js
+│   │   │   │   └── migrations/
+│   │   │   └── routes/
+│   │   │       ├── projects.js
+│   │   │       ├── issues.js
+│   │   │       ├── labels.js
+│   │   │       ├── comments.js
+│   │   │       ├── dashboard.js
+│   │   │       ├── search.js
+│   │   │       └── export.js
+│   │   └── server.js
+│   └── frontend/          ← Vue 3 + Vite + Pinia
+│       ├── src/
+│       │   ├── api/
+│       │   │   └── axios.js
+│       │   ├── stores/
+│       │   ├── views/
+│       │   └── components/
+│       └── vite.config.js
+├── package.json           ← npm workspaces root
+└── ...
+```
+
+The frontend made HTTP calls via axios to the localhost, and the Express backend served all the data. Running `npm run dev` fired up both packages concurrently. It worked great — locally.
+
+<div align="center">
+      <img src="/images/posts/sparkletrack-04.jpg" alt="I swear it did!" width="40%" height="40%" />
+</div>
+
+The problem was "distributable desktop app." For Electron to package this cleanly, it needed to spawn the Express backend as a child process at runtime, manage its lifecycle, handle port conflicts, and hope the bundler included everything correctly. That's a lot of moving parts to babysit. As it turns out, this is the part that eventually sent me down a much better path.
+
+---
+
+**The Electron Packaging Arc (Or: That Time GitHub Actions Humbled Me)**
+
+<div align="center">
+      <img src="/images/posts/sparkletrack-05.gif" alt="BIG REGRET" width="60%" height="60%" />
+</div>
+
+Once the core app was working, I wanted to set up automated releases through GitHub Actions — push to `main`, get a `.dmg`, `.exe`, `.AppImage`, and `.deb` automatically. Simple enough in theory.
+
+The first version of `release.yml` was straightforward: trigger on `v*` tags, run `electron-builder` on a matrix of `[macos-latest, windows-latest, ubuntu-latest]`. What followed was an extended conversation with GitHub Actions logs that I can only describe as character-building.
+
+The first real wall: `better-sqlite3` is a native Node module that compiles against a specific Node ABI version. When Electron runs your app, it uses its own Node runtime, which almost certainly doesn't match the Node version the module was originally compiled against. This throws a delightful error that looks like:
+
+```
+Error: The module was compiled against a different Node.js version
+NODE_MODULE_VERSION mismatch
+```
+
+The fix is `electron-rebuild`, which recompiles native modules against the Electron Node version. This needed to be in the GitHub Actions workflow as a dedicated step:
+
+```yaml
+- name: Rebuild better-sqlite3 for Electron
+  shell: bash
+  run: npx electron-rebuild -f -w better-sqlite3
+```
+
+Without this step, the packaged app opens, cheerfully initializes, and then immediately crashes on any database call.
+
+Then there was the `GITHUB_TOKEN` loop problem. My updated workflow had a `tag` job that bumped the version in `package.json`, committed it with a "chore: bump version" message, and pushed a new tag. The `build` job was supposed to trigger off that tag. Except it never ran.
+
+The reason: GitHub Actions won't trigger subsequent workflows from events caused by the built-in `GITHUB_TOKEN` bot. This is an intentional anti-infinite-loop measure. To actually chain workflow triggers, you need a Personal Access Token (PAT) with `repo` and `workflow` scopes. The `tag` job uses the PAT to push, GitHub sees it as a real user action, and the `build` job fires correctly.
+
+There was also a fun moment where the `build` job was running three times per push because the `if:` condition was missing. Small omission, chaotic result.
+
+The final pipeline looks like this:
+
+```
+Push to main (non-chore commit)
+         │
+         ▼
+    tag job (ubuntu)
+    ├── npm version patch --no-git-tag-version
+    ├── git commit "chore: bump version to X.X.X"  [skips re-trigger]
+    └── git push tag vX.X.X  [uses PAT_TOKEN]
+                  │
+                  ▼  (tag push triggers new workflow run)
+    build job × 3 (matrix)
+    ├── macos-latest   ──► SparkleTrack-X.X.X.dmg
+    ├── windows-latest ──► SparkleTrack-X.X.X-Setup.exe
+    └── ubuntu-latest  ──► SparkleTrack-X.X.X.AppImage + .deb
+```
+
+The "chore: bump version" commit message pattern is the guard that prevents the bot's own commit from re-triggering the `tag` job. One `!contains(github.event.head_commit.message, 'chore: bump version')` condition and the loop is dead.
+
+---
+
+**The Architecture Decision That Changed Everything**
+
+Here's where the "keep Express and spawn it as a child process" plan started feeling wrong. Getting `better-sqlite3` to behave across the packaging pipeline was already complicated and adding "and also manage a long-running Express server from inside Electron's main process" was more complexity than the use case warranted. There was also no good story for what happens if the port is already in use, or if the Express process crashes without taking Electron down with it.
+
+The cleaner approach was to ditch the separate backend entirely and move all data access into Electron's main process using IPC (Inter-Process Communication). This is what Electron was actually designed for as the main process has full Node.js access, the renderer process is sandboxed like a browser, and `contextBridge` provides a safe, explicit API surface between them.
+
+The architectural difference:
+
+```
+BEFORE (Express child process)                AFTER (Electron IPC)
+
+  Renderer                                      Renderer
+    │ HTTP fetch / axios                           │ window.api.invoke(...)
+    ▼                                             ▼
+  localhost:3001 (Express)           contextBridge (preload.js)
+    │ SQL queries                                  │ ipcRenderer.invoke(...)
+    ▼                                             ▼
+  better-sqlite3                       ipcMain.handle(...)  ← main process
+                                                  │ Drizzle queries
+                                                  ▼
+                                         better-sqlite3 (bundled)
+```
+
+Fewer moving parts, no port management, no child process lifecycle to babysit, and the whole thing bundles cleanly because everything lives in the `electron/` directory.
+
+---
+
+**The IPC Migration**
+
+The migration had a clear pattern: every Express route becomes an `ipcMain.handle` call, and every axios call in the frontend becomes a `window.api.invoke` call. The naming convention I used was `resource:action`:
+
+```
+GET  /projects        →  projects:getAll
+POST /projects        →  projects:create
+GET  /projects/:id    →  projects:getOne
+PUT  /projects/:id    →  projects:update
+DELETE /projects/:id  →  projects:delete
+GET  /issues          →  issues:getAll
+POST /issues          →  issues:create
+... and so on for labels, comments, dashboard, search, export
+```
+
+The handler pattern is satisfyingly clean compared to Express routes:
+
+```js
+// Express route
+router.get('/projects', (req, res) => {
+  const rows = db.prepare('SELECT * FROM projects').all()
+  res.json(rows)
+})
+
+// IPC handler equivalent
+ipcMain.handle('projects:getAll', () => {
+  return db.select().from(projects).all()
+})
+```
+
+No `req`, no `res`, no JSON serialization. Just return the data. Electron handles the serialization automatically.
+
+The `preload.js` file is the bridge between worlds. It uses `contextBridge` to expose a safe `window.api` object to the renderer, without giving the renderer direct access to Node or Electron internals:
+
+```js
+// electron/preload.js — must be CommonJS!
+const { contextBridge, ipcRenderer } = require('electron')
+
+contextBridge.exposeInMainWorld('window.api', {
+  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args)
+})
+```
+
+One critical thing that bit me: **preload scripts must be CommonJS**, even when the rest of the project uses ES modules (`"type": "module"` in `package.json`). Using `import` syntax in the preload file causes a completely silent failure where `window.api` just never gets defined, and your renderer silently can't talk to anything. 
+
+For the frontend, axios was replaced with a thin IPC shim that preserved the same calling interface so the stores didn't need to change much:
+
+```js
+// Before: axios call
+const res = await axios.get('/projects')
+return res.data
+
+// After: IPC shim
+const result = await window.api.invoke('projects:getAll')
+return result
+```
+
+The Drizzle ORM integration also needed a specific setup. The `createDb()` function in `electron/db.js` creates the `better-sqlite3` instance, wraps it in Drizzle, and returns both the db handle and a `migrate` function:
+
+```js
+export function createDb() {
+  const userDataPath = app.getPath('userData')
+  const dbPath = path.join(userDataPath, 'sparkletrack.db')
+
+  const sqlite = new Database(dbPath)
+  sqlite.pragma('journal_mode = WAL')
+  sqlite.pragma('foreign_keys = ON')
+
+  const db = drizzle(sqlite)
+
+  const migrate = () => {
+    sqlite.pragma('foreign_keys = OFF')
+    drizzleMigrate(db, { migrationsFolder: path.join(__dirname, 'migrations') })
+    sqlite.pragma('foreign_keys = ON')
+  }
+
+  return { db, migrate }
+}
+```
+
+Toggling foreign keys off during migration is required by SQLite when migrations involve table recreation, which Drizzle does under the hood for certain schema changes. Foreign key violations during migration are a great way to have a bad afternoon.
+
+One other thing worth calling out: Vite's `base` config. When building for Electron, you need `base: './'` in `vite.config.js`. Without it, built asset paths are absolute (`/assets/index.js`), which works fine for web deployments but fails when the app loads via the `file://` protocol in a packaged Electron build. The assets just don't load and you get a blank white window with no useful error.
+
+---
+
+**The Final File Structure**
+
+After the migration, the `packages/backend` directory was gone entirely. Everything lives either in `electron/` or `packages/frontend/`:
+
+```
+sparkletrack/
 ├── electron/
-│   ├── main.js
-│   ├── preload.js       ← contextBridge (must be CJS)
-│   ├── db.js            ← SQLite + Drizzle init
-│   ├── ipc.js           ← all IPC handlers
-│   ├── schema.js
-│   └── migrations/
-└── packages/
-    └── frontend/
-        └── src/
-            ├── api/     ← IPC wrapper
-            ├── components/
-            ├── composables/
-            ├── stores/
-            └── views/
+│   ├── main.js          ← app lifecycle, window creation
+│   ├── preload.js       ← contextBridge (CommonJS!)
+│   ├── db.js            ← better-sqlite3 + Drizzle setup
+│   ├── ipc.js           ← all ipcMain.handle registrations
+│   ├── schema.js        ← Drizzle schema (moved from backend)
+│   ├── migrations/      ← collapsed into single init migration
+│   └── icons/
+│       ├── icon.png
+│       ├── icon.ico
+│       └── icon.icns
+├── packages/
+│   └── frontend/
+│       ├── src/
+│       │   ├── api/
+│       │   │   └── ipc.js     ← IPC shim replacing axios
+│       │   ├── stores/
+│       │   ├── views/
+│       │   └── components/
+│       └── vite.config.js     ← base: './' is load-bearing
+└── package.json
 ```
 
-The entire `packages/backend` directory was deleted. The app went from two packages to one, release builds started working, and startup time dropped noticeably as well. No more waiting for an Express server to initialize before the window would load.
-
----
-
-**Two Gotchas Worth Calling Out**
-
-**`better-sqlite3` needs to be rebuilt for Electron's Node version.**
-It's a native module compiled against a specific Node ABI. The system Node version and Electron's internal Node version are almost certainly different. Add `npx electron-rebuild -f -w better-sqlite3` to your `postinstall` script and your GitHub Actions release workflow from day one. Without it, the packaged app throws a cryptic `NODE_MODULE_VERSION` mismatch and refuses to start.
-
-**Preload scripts must be CommonJS.**
-Even in 2026. Even with `"type": "module"` in your `package.json`. The `import` syntax in a preload file causes a silent failure where `window.api` just never gets defined. Switch to `const { contextBridge } = require('electron')` and move on.
-
----
-
-**The Release Pipeline**
-
-The goal: push to `main`, get a release with `.exe`, `.dmg`, `.AppImage`, and `.deb` files automatically.
-
-```
-Push to main
-     │
-     ▼
-tag job (ubuntu)
-├── npm version patch
-├── git commit "chore: bump version to X.X.X"
-└── git push tag vX.X.X
-              │
-              ▼  (tag triggers build)
-build job × 3 (matrix)
-├── macos-latest   ──► SparkleTrack-X.X.X.dmg
-├── windows-latest ──► SparkleTrack-X.X.X-Setup.exe
-└── ubuntu-latest  ──► SparkleTrack-X.X.X.AppImage
-                       sparkletrack_X.X.X_amd64.deb
-```
-
-The key insight was separating tagging and building into two jobs with `if:` conditions. The `tag` job uses a PAT (Personal Access Token) instead of `GITHUB_TOKEN` to push the tag — because GitHub won't trigger downstream workflows from events caused by its own bot token. The `build` job only runs when a tag is pushed (`startsWith(github.ref, 'refs/tags/v')`).
-
-<img src="/images/posts/sparkletrack-03.png" alt="SparkleTrack GitHub Actions release workflow — successful multi-platform build" width="100%" height="100%" />
-
-
----
+One more thing that needed cleanup: the Drizzle migrations. During development I had accumulated several migration files, some of which reflected schema states that no longer existed because I'd manually altered tables between generates. Drizzle's migration runner is strict and it runs files in order and expects each one to apply cleanly. The fix was to collapse all migrations into a single clean init file that represented the final schema, then delete everything else. New installs start from a clean slate, and the migration history is honest again.
 
 **What I Learned**
 
-**The "just use Express" instinct is wrong for desktop apps.** It feels familiar and works in dev, but creates a fragile runtime dependency that's hard to package correctly. IPC is the right abstraction because it's faster, simpler, and what Electron was designed for.
+**Native modules in Electron are not optional complexity.** If your app touches the filesystem, a database, or any C++ addon, you will eventually hit a `NODE_MODULE_VERSION` mismatch. `electron-rebuild` belongs in your `postinstall` script from day one, not after you've shipped a broken build.
 
-**Migrations are append-only history.** I hit a painful failure because I manually altered a table between Drizzle-generated migrations. Never touch migration files after they've been committed. If the schema is wrong, generate a new migration.
+**The "just use Express" instinct is wrong for desktop apps.** It feels familiar and works in dev, but it creates a fragile runtime dependency that's surprisingly hard to package correctly. IPC is the right abstraction — faster, simpler, and it's what Electron was designed for. If you're building a local-first desktop app, your backend should live in the main process.
 
-**`base: './'` in Vite is load-bearing for Electron.** Without it, built asset paths are absolute (`/assets/index.js`), which works for web but fails when loading via `file://` protocol in a packaged app.
+**Preload scripts are CommonJS. Full stop.** Even in 2026. Even with `"type": "module"` in your root `package.json`. Don't fight it, just use `require()`.
 
-**A PAT is required for bot-triggered workflow chaining.** GitHub's bot token can't trigger other workflows. If your CI creates a tag that should trigger a release build, that push must use a PAT.
+**Migrations are append-only history.** I broke my migration runner by manually altering a table between Drizzle-generated migrations, creating an inconsistency the runner couldn't reconcile. Never touch migration files after they're committed. Schema is wrong? Generate a new migration.
+
+**`base: './'` in Vite is load-bearing for Electron.** Without it, your built app is a blank white window and you'll spend an hour wondering if the IPC wiring is broken before realizing it's just asset paths.
+
+**A PAT is required for bot-triggered workflow chaining.** GitHub's default bot token can't trigger other workflows — that's intentional. If your CI creates a tag that should trigger a release build, that push must use a Personal Access Token or the downstream job will never run.
+
+**The irony of spending more time on the tooling than on the features is very on-brand for a hobby developer. I regret nothing.**
 
 ---
 
 **What's Next**
 
-SparkleTrack works, ships, and installs cleanly on all three platforms. But it's version 1.x of course and that means there's a lot of road left.
+SparkleTrack ships and installs cleanly on all three platforms. But it's version 1.0 — there's a lot of road left.
 
-- **Auto-updater** — check for updates on launch, prompt to install, no manual downloads
-- **Milestones** — group issues with due dates and progress tracking
-- **Issue relationships** — blocking/blocked-by between issues
-- **Keyboard-first navigation** — full keyboard control without touching the mouse
-- **Themes** — the pink aesthetic is very much mine; dark mode would make it usable by people with different taste
-- **Data sync** — sync the SQLite file across machines via a lightweight cloud layer
+Things I want to add:
 
-<img src="/images/posts/sparkletrack-04.png" alt="SparkleTrack issue detail view — activity feed, labels, and comments" width="100%" height="100%" />
+- **Auto-updater** — `electron-updater` integrates with the same GitHub Releases pipeline already in place. When a new version ships, the app should notify and update itself.
+- **Markdown support in issue descriptions and comments** — right now it's plain text. Hobby project documentation deserves formatting.
+- **Milestone tracking** — grouping issues into milestones for a lightweight sprint-style workflow.
+- **Keyboard shortcuts** — `Cmd+K` command palette for quick navigation, `N` to create a new issue, the usual stuff.
+- **Dark mode** — the design token system is already set up for it, it's mostly just defining the alternate token values and wiring a toggle.
+- **Import from GitHub Issues** — if you have an existing repo with issues you want to pull in, a one-time import would make adoption much easier for developers who already use GitHub for tracking.
 
----
-
-SparkleTrack started as a solution to my own chaos and ended up teaching me more about Electron internals, native module compilation, and CI/CD pipeline design than I expected. The irony of spending more time on the tooling than on the features is very on-brand for a hobby developer. I regret nothing.
-
-Open source repo and release downloads at [github.com/chelseymachin/sparkletrack](https://github.com/chelseymachin/sparkletrack). Please poke around, steal the IPC migration pattern, or file an issue about SparkleTrack so I can SparkleTrack a fix for it.
+The project is open source at [github.com/chelseymachin/sparkletrack](https://github.com/chelseymachin/sparkletrack) if you want to poke around, steal the IPC migration pattern, or file an issue about SparkleTrack in SparkleTrack.
 
 ---
+
+*Built with ✨, Vue 3, Electron, better-sqlite3, Drizzle ORM, and an embarrassing number of GitHub Actions reruns.*

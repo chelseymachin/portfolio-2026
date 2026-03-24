@@ -1,145 +1,51 @@
 ---
-title: "Stitch Project: A Desperate Girl's Textile Based Ravelry"
-date: "2026-03-18"
-excerpt: "What happens when a sewist who codes decides the internet needs its own Ravelry — featuring presigned URLs, Terraform tantrums, and a surprising amount of feelings about CORS headers."
-tags: ["AWS", "Vue 3", "GitHub Actions", "Go", "PostgreSQL", "Terraform", "ECS Fargate", "S3", "Cognito", "Chi Router", "TypeScript", "Monorepo"]
+title: "Building Stitch: A Full-Stack Sewing Pattern Database From Scratch"
+date: 2026-03-24
+excerpt: "What happens when a sewing enthusiast who also writes code decides to build her own pattern management app on AWS? Spoiler: a lot of tears."
+tags: [go, vue3, aws, postgres, terraform, ecs, fargate, cognito, s3, fullstack, solo-project]
 thumbnail: "/images/posts/stitch-project-thumbnail.gif"
 ---
 
-*What happens when a sewist who codes decides the internet needs its own Ravelry — featuring presigned URLs, Terraform tantrums, and a surprising amount of feelings about CORS headers.*
+*A full solo build covering Go backends, AWS infrastructure chaos, presigned S3 drama, ECS task definition drift, and everything I learned shipping a scalable full-stack app from zero to live.*
 
 ---
 
-If you've ever tried to find a sewing pattern based on something specific, like a woven dress with a low back in a size that actually fits your measurements, you know how painful the current landscape is. You're googling, clicking through Etsy listings, scrolling Instagram, asking in Facebook groups. There is no central place to go. There is no sewing equivalent of Ravelry.
+**Why I Built This**
 
-That's the problem Stitch Project is trying to solve.
+I sew. I also write software for a living. For a while those two hobbies lived in completely separate parts of my brain, but at some point I got frustrated enough with the state of existing sewing pattern management tools that I decided to just build my own.
 
-For those outside the fiber arts world, Ravelry is a beloved pattern database and social community for knitters and crocheters. You can search thousands of patterns by yarn weight, needle size, construction method, and garment type. You can see photos of real projects made by real people, read reviews, and filter by your exact gauge. It is genuinely one of the best community tools on the internet, and sewists have nothing like it.
+The app I had in mind was basically a searchable, filterable community database for sewing patterns. Every pattern in the database would have full measurement range metadata (bust, waist, hip), garment type categorization, fabric tag recommendations, designer info, and a purchase link. Logged-in users could upload their own sewing projects, link them to patterns in the database, rate pattern difficulty, and maintain a favorites list. Admins (me) could manage the entire pattern library including image galleries. No browsing without an account. Pink and purple everywhere. Kawaii but make it functional.  Inspired by fiber art friends' community Ravelry, ofc.
 
-So I built Stitch Project. And then I deployed it to production. And then I spent three weeks debugging it. But we're getting ahead of ourselves.
+I'm calling it the Stitch Project.
+
+<div align="center">
+    <img src="/images/posts/stitch-project-05.jpg" width="100%" height="100%" />
+</div>
+---
+
+**Stack Decisions**
+
+This was a solo build with a "I am maintaining this myself forever" constraint, so I leaned toward managed AWS services wherever cost was reasonable, and kept the backend small and stateless.
+
+**Frontend:** Vue 3 with Vite, TypeScript, Pinia for state, Vue Router, and a fully custom component library to match the design system. No third-party UI kit. I wanted the aesthetic to be mine.
+
+**Backend:** Go with the Chi router. Go was the right call here because the binary is tiny, the memory footprint is low, and Chi is idiomatic without being magical. No heavy ORM either. The database layer is handwritten SQL using `pgx` with typed repository structs. It sounds more work than using an ORM, but it made the complex filtering logic dramatically easier to reason about.
+
+**Database:** PostgreSQL on RDS (db.t4g.micro). Around $15 a month on a reserved instance, managed backups, private subnet, done.
+
+**Auth:** AWS Cognito. Love to hate it, but for a solo project where I am not building my own identity system it genuinely does the job. Email verification, JWT issuance, JWKS endpoint for backend token validation. The frontend uses the Cognito JS SDK to handle login flows client-side. The backend verifies JWTs on every protected request using Cognito's public keys.
+
+**Media storage:** S3 with presigned upload URLs. The flow is: frontend requests a presigned URL from the backend, backend generates one, frontend uploads directly to S3. The file never passes through the backend server. This keeps Fargate lightweight and stateless.
+
+**Infrastructure:** ECS Fargate for the containerized Go API, S3 and CloudFront for the frontend SPA and media CDN, Secrets Manager for runtime config injection, and Terraform for all of it. GitHub Actions handles CI/CD with separate workflows for the frontend and backend, each watching its own path in the monorepo.
+
+One tradeoff I consciously made: I used `golang-migrate` for database migrations and embedded the migration files directly into the Docker image rather than running them as a separate step or init container. More on why in a minute.
 
 ---
 
-**What Is Stitch Project, Actually?**
+**The Monorepo Structure**
 
-Stitch Project is a full stack sewing pattern discovery and social community app. The core idea is simple: a searchable, visual database of sewing patterns where you can filter by garment type, fabric, body measurements, designer, and more. Beyond browsing, you can save patterns to your favorites and log your finished projects with photos so other people can see what a pattern actually looks like when made up in real fabric by a real person.
-
-That last part is the social piece, and it's the part I find most exciting. Pattern envelope photos are notoriously unhelpful. They're styled on models, shot in studio lighting, and often show the pattern in fabrics you'd never actually use. What you actually want to see is thirty photos from thirty different people who made the same dress in different sizes and different fabrics, with notes on what they changed. That's what Stitch Project is building toward.
-
-The app is live at [stitchproject.chelseymachin.com](https://stitchproject.chelseymachin.com) and it is very much a living project. There are rough edges. There are features I've been dreaming about for months. But it works, it's deployed, and I am unreasonably proud of it.
-
-<img src="/images/posts/stitch-project-01.png" alt="browse view with patterns loaded and the filter sidebar visible" width="100%" height="100%" />
-
----
-
-**The Tech Stack**
-
-I made some deliberate choices here, and I want to talk through them because a few of them are a little unconventional for a solo project.
-
-***Go on the Backend***
-
-I chose Go for the backend and I will not apologize for it. Go is fast, the standard library is genuinely great, and the compiled binary makes Docker images tiny. For a project running on Fargate at the smallest possible CPU/memory allocation, this matters. The binary starts in milliseconds.
-
-I'm using the **Chi router** because it's lightweight and composable without being a full framework. The middleware chaining is clean and it plays nicely with the standard `net/http` interface, which means I'm not locked into anything proprietary.
-
-The database layer is just raw SQL with **pgx**, no ORM. I know this is a spicy opinion but I find ORMs frustrating for anything beyond basic CRUD. When your queries get interesting (lateral joins, array operators, full text search) you end up fighting the abstraction anyway. Writing SQL directly means I know exactly what's hitting the database and can troubleshoot it more cleanly when I need to make changes.
-
-***Vue 3 on the Frontend***
-
-Vue 3 with the Composition API is genuinely one of my favorite things to write. The reactivity system is intuitive, single file components keep everything organized, and TypeScript support has gotten really good. Vite makes the dev experience fast enough that I actually enjoy frontend work, which is saying something.
-
-***PostgreSQL***
-
-Postgres was a no brainer. Array columns, full text search, great JSON support, rock solid. The pattern filtering uses some fun Postgres features including array containment operators for the gender field and `plainto_tsquery` for the search functionality.
-
-***AWS (The Whole Stack)***
-
-This is where things get spicy. I'm running the full AWS production setup: ECS Fargate for the backend container, RDS for the database in a private VPC subnet, S3 and CloudFront for the frontend and media, Cognito for auth, and ALB for HTTPS termination. Everything is managed with Terraform.
-
-Is this overkill for a solo project in its early days? Absolutely. Did I learn an enormous amount building it? Also absolutely. And the architecture scales well, which matters to me because I have real plans for where this is going.
-
----
-
-**Architecture Decisions I'd Make Again**
-
-***Embedding Migrations in the Docker Container***
-
-One of the early headaches was figuring out how to run database migrations in a private subnet environment. The RDS instance lives in a private subnet by design (you don't want your database publicly accessible), which means you can't just `psql` into it from your laptop.
-
-The solution I landed on was embedding migrations directly into the Docker image and running them at container startup via an entrypoint script. Simple, reliable, and it means every deploy automatically runs any pending migrations before the server starts.
-
-```bash
-#!/bin/sh
-set -e
-
-echo "Running migrations..."
-/app/migrate -path /app/migrations -database "$DATABASE_URL" up
-echo "Migrations complete."
-
-echo "Starting server..."
-exec /app/server
-```
-
-The `set -e` is the important part here. If migrations fail, the container exits immediately and ECS won't route traffic to it. No silent failures = no half migrated database state.
-
-***Presigned S3 Uploads***
-
-For photo uploads I'm using presigned S3 URLs. The flow is: the frontend asks the backend for a presigned URL, the backend generates one and returns it, and then the frontend uploads directly to S3 without the file ever passing through the backend server.
-
-I think this is the right pattern for a few reasons. It keeps the backend fast and stateless. It doesn't waste Fargate CPU and memory on file transfers. And it means the backend never needs to buffer large file uploads in memory.
-
-```go
-func (s *S3Service) PresignPutURL(ctx context.Context, s3Key, contentType string) (string, error) {
-    req, err := s.presigner.PresignPutObject(ctx, &s3.PutObjectInput{
-        Bucket:      aws.String(s.bucket),
-        Key:         aws.String(s3Key),
-        ContentType: aws.String(contentType),
-    }, s3.WithPresignExpires(15*time.Minute))
-    if err != nil {
-        return "", fmt.Errorf("presign put: %w", err)
-    }
-    return req.URL, nil
-}
-```
-
-The 15 minute expiry is generous enough for slow connections but short enough that leaked URLs aren't a meaningful security risk.  Especially as there's no real 'private' media on the site.  Projects and media uploaded for them are available for any social users to browse.
-
-***CORS as a Dynamic Origin Mirror***
-
-This one tripped me up and I want to document it properly because the solution is not obvious. When you have multiple allowed origins (localhost for dev, your production domain), you can't just set the `Access-Control-Allow-Origin` header to a comma separated list. Browsers require a single origin value.
-
-The correct approach is to read the `Origin` header from the incoming request, check it against your allowed list, and echo it back if it matches.
-
-```go
-allowedOrigins := make(map[string]bool)
-for _, o := range strings.Split(cfg.CORSOrigins, ",") {
-    allowedOrigins[strings.TrimSpace(o)] = true
-}
-
-r.Use(func(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        origin := r.Header.Get("Origin")
-        if allowedOrigins[origin] {
-            w.Header().Set("Access-Control-Allow-Origin", origin)
-        }
-        w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-        w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        if r.Method == http.MethodOptions {
-            w.WriteHeader(http.StatusNoContent)
-            return
-        }
-        next.ServeHTTP(w, r)
-    })
-})
-```
-
-This feels obvious in hindsight but it is not something that's well documented in most CORS overviews, and in enterprise production scenarios this is typically already scaffolded into how you work between dev and production environments and isn't something you're commonly designing yourself unless you're constantly spinning up new apps for use in your workplace for some wild reason.  So it was helpful to work through as an exercise.
-
----
-
-**The File Structure**
-
-I organized this as a monorepo with three top level directories. The separation felt clean and it made the CI/CD setup straightforward since each workflow can watch its own path.
+The project lives in one repo with three top-level directories. This made the GitHub Actions setup clean because each workflow could just watch `backend/**` or `frontend/**` independently.
 
 ```
 stitch/
@@ -157,7 +63,7 @@ stitch/
 │   │   ├── handlers/             # HTTP handlers, one file per resource
 │   │   ├── middleware/           # Cognito JWT auth, admin check
 │   │   ├── models/               # shared data types
-│   │   ├── response/             # JSON helpers
+│   │   ├── response/             # JSON response helpers
 │   │   └── storage/              # S3 service
 │   ├── migrations/               # numbered SQL migration files
 │   ├── Dockerfile
@@ -170,102 +76,222 @@ stitch/
 │       │   ├── projects/         # DifficultyStars, project components
 │       │   └── admin/            # QuickAddModal
 │       ├── services/             # typed API client functions
-│       ├── stores/               # Pinia stores for patterns, favorites, auth
+│       ├── stores/               # Pinia stores
 │       ├── types/                # TypeScript interfaces
-│       └── views/                # page level components
+│       └── views/                # page-level components
 └── infrastructure/
     └── terraform/                # all AWS infrastructure as code
 ```
 
-The `internal/db` layer is where most of the interesting work happens. Each repository struct takes a `pgxpool.Pool` and exposes typed methods. There's no magic, no code generation, just functions that take context and return typed results or errors.
+The `internal/db` layer is where most of the interesting work happens. Each repository struct takes a `pgxpool.Pool` and exposes typed query methods. No magic, no generated code, just functions that take context and return typed results or errors.
 
-<img src="/images/posts/stitch-project-02.png" alt="Screenshot of the admin pattern form with the image upload panel and the chip selectors for garment type and fabric tags" width="100%" height="100%" />
+<img src="/images/posts/stitch-project-01.png" alt="browse view with patterns loaded and the filter sidebar visible" width="100%" height="100%" />
+<img src="/images/posts/stitch-project-02.png" width="100%" height="100%" />
+<img src="/images/posts/stitch-project-03.png" width="100%" height="100%" />
+<img src="/images/posts/stitch-project-04.png" width="100%" height="100%" />
 ---
 
-**The Pattern Filtering System**
+**Building the Pattern Filter System**
 
-The filter sidebar was one of the more satisfying pieces to build. Users can filter by gender, age group, multiple garment types, multiple fabric tags, designer, and bust/waist/hip measurement ranges. All of these combine with AND logic except within a category (selecting two garment types returns patterns that match either one, not both).
+The filter sidebar was one of the more satisfying pieces to build and also one of the sneakier bugs to fix.
 
-On the backend, the filtering is built with a dynamic WHERE clause that appends conditions as they come in. The measurement filtering is particularly nice because it handles the overlap case correctly: a pattern with a bust range of 34 to 44 will appear in results for someone filtering for 38 to 46 because the ranges intersect, not just because they're identical.
+Users can filter patterns by gender, age group, multiple garment types, multiple fabric tags, designer, and bust/waist/hip measurements. The measurement filter is particularly useful: a pattern with a bust range of 34 to 44 inches will appear in results for someone filtering for 38 to 46 because the ranges overlap, not just when they are identical. On the backend this is a simple range intersection check, but it is the kind of thing that is easy to get wrong and frustrating to use when it is.
+
+The backend uses a dynamic WHERE clause builder that appends conditions as filters come in. Here is the shape of it:
 
 ```go
-if f.BustMin != nil {
-    where = append(where, fmt.Sprintf("p.bust_max >= $%d", argIdx))
-    args = append(args, *f.BustMin)
-    argIdx++
+var where []string
+var args []interface{}
+argIdx := 1
+
+if f.Query != "" {
+    where = append(where, fmt.Sprintf(
+        "p.name ILIKE $%d OR p.description ILIKE $%d", argIdx, argIdx+1,
+    ))
+    args = append(args, "%"+f.Query+"%", "%"+f.Query+"%")
+    argIdx += 2
 }
-if f.BustMax != nil {
-    where = append(where, fmt.Sprintf("p.bust_min <= $%d", argIdx))
-    args = append(args, *f.BustMax)
-    argIdx++
+
+// ... each filter condition appended similarly
+```
+
+The sneaky bug: the first version of the garment type filter used `GROUP BY` and `HAVING COUNT(DISTINCT pgt.garment_type_id) = N` which required a pattern to match ALL selected garment types. So if you selected "dress" and "skirt," you would only get results tagged with both. What you actually want is results tagged with either one. The fix was to drop the `GROUP BY / HAVING` and switch to a simple `IN` subquery:
+
+```go
+where = append(where, fmt.Sprintf(`
+    p.id IN (
+        SELECT pgt.pattern_id FROM pattern_garment_types pgt
+        WHERE pgt.garment_type_id IN (%s)
+    )`, strings.Join(placeholders, ","),
+))
+```
+
+Much better. Same fix applied to fabric tags.
+
+The frontend half of this had its own moment. The garment type chips were initially wired to a `toggleSingle` function that set the filter value to a single string instead of an array, so calling `.join()` on it later would throw. The fix was adding a `toggleMulti` function that maintains the filter as an actual string array, consistent with how fabric tags were already handled.
+
+---
+
+**Migrations: The Part Where I Tripped Over My Own Instructions**
+
+Early in the project setup, I added `migrations/` to the `.dockerignore` file to keep build times fast during local development. Then later, when I needed migrations to run at container startup in production, I got a fun error where the container just could not find the migration files.
+
+The lesson here is that `.dockerignore` entries have consequences and you will forget about them at the worst possible time.
+
+The solution I landed on was running migrations via an entrypoint script that fires before the server starts. The migration files are embedded directly in the Docker image:
+
+```bash
+#!/bin/sh
+set -e
+
+echo "Running migrations..."
+/app/migrate -path /app/migrations -database "$DATABASE_URL" up
+echo "Migrations complete."
+
+echo "Starting server..."
+exec /app/server
+```
+
+The `set -e` is the important piece. If migrations fail, the container exits immediately and ECS will not route traffic to it. No silent failures, no partially migrated state confusing everything downstream. If something goes wrong you see it in CloudWatch right away.
+
+The Dockerfile copies the migrate binary from the builder stage and includes the migrations directory explicitly:
+
+```dockerfile
+FROM golang:1.25-alpine AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/server ./cmd/api
+RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+FROM alpine:3.19
+RUN apk --no-cache add ca-certificates curl
+WORKDIR /app
+COPY --from=builder /app/server .
+COPY --from=builder /go/bin/migrate .
+COPY migrations/ ./migrations/
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+EXPOSE 8080
+CMD ["./entrypoint.sh"]
+```
+
+Obvious in retrospect. Everything in infrastructure is obvious in retrospect.
+
+<div align="center">
+    <img src="/images/posts/stitch-project-06.gif" width="80%" height="80%" />
+    <figcaption>^ Me re-reading the .dockerignore I wrote two months ago ^</figcaption>
+</div>
+
+---
+
+**The ECS Task Definition Drift Situation**
+
+This one is worth documenting in detail because it was the most frustrating debugging session of the whole project and the root cause is not obvious until you have seen it.
+
+Terraform manages the ECS task definition, and the task definition is what tells ECS which container image to run and which secrets to inject at startup. At some point during the deployment phase, I renamed a secret key from `S3_BUCKET` to `AWS_S3_BUCKET` both in the task definition Terraform config and in Secrets Manager. I ran `terraform apply`. No errors.
+
+But the container kept failing to start with an error about `S3_BUCKET` not being found. After a lot of log tailing and head scratching, the issue turned out to be two layered things:
+
+First, Terraform had registered a new task definition revision with the correct key name, but the ECS **service** was pinned to an older revision because of `lifecycle { ignore_changes = [task_definition] }` in the service Terraform config. That flag is there to prevent CI/CD deploys from being overwritten by Terraform, which is the correct behavior, but it also means Terraform silently cannot update the service's active task definition.
+
+Second, I was trying to force the update via `aws ecs update-service --task-definition stitch-backend:12` but the service was pulling a revision 8 task that was still running and healthy, and ECS was not actually replacing it.
+
+The fix was: confirm the service pointed to the latest revision, then manually stop the running task to force ECS to start a replacement using the new task definition. Once the old task was stopped, ECS started a new one from the correct revision, migrations ran, health checks passed, and the service came up clean.
+
+The takeaway: when you have `ignore_changes` on an ECS service, any config changes to the task definition need to be followed by an explicit `aws ecs update-service --task-definition <latest ARN>` call. Terraform apply alone will not do it.
+
+---
+
+**Presigned S3 Uploads and the Credentials Chain Problem**
+
+Photo uploads use presigned S3 URLs, which is the right architecture for this kind of app. The pattern is simple: frontend asks backend for a presigned PUT URL, backend generates one with a 15-minute expiry, frontend uploads the file directly to S3 without it touching the backend server.
+
+In development this worked fine because my local `.env` had `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` set. In production on ECS those environment variables do not exist. Instead, the ECS task role provides credentials automatically via the instance metadata service. The S3 service was initialized with explicit static credentials, and when those environment variables were empty in production, the AWS SDK returned `static credentials are empty` and the presign would fail.
+
+The fix was to detect whether credentials were provided and fall back to the default credential chain when they were not:
+
+```go
+func NewS3Service(region, bucket, accessKeyID, secretAccessKey string) (*S3Service, error) {
+    var cfg aws.Config
+    var err error
+
+    if accessKeyID != "" && secretAccessKey != "" {
+        cfg, err = config.LoadDefaultConfig(context.Background(),
+            config.WithRegion(region),
+            config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+                accessKeyID, secretAccessKey, "",
+            )),
+        )
+    } else {
+        cfg, err = config.LoadDefaultConfig(context.Background(),
+            config.WithRegion(region),
+        )
+    }
+    // ...
 }
 ```
 
-The logic reads: "show me patterns whose maximum size is at least my minimum, AND whose minimum size is no more than my maximum." This correctly captures partial overlaps, which is what you actually want when shopping for a pattern.
-
-On the frontend, the filter state lives in a single reactive object that gets watched and triggers a new API call whenever it changes. The sidebar component uses `v-model` to emit updates back to the parent, which keeps the filter state ownership in one place.
-
-```typescript
-watch(filters, (newFilters) => { 
-  patternsStore.fetchPatterns(newFilters) 
-}, { deep: true })
-```
+Local dev uses static credentials from `.env`. Production uses the task role. Both work with the same code.
 
 ---
 
-**Things That Were Painful**
+**CORS, The Gift That Keeps Taking**
 
-***AWS Secrets Manager Key Naming***
+CORS is one of those things that you think you have handled and then you deploy to production and discover you absolutely did not.
 
-I spent an embarrassing amount of time on a mismatch between the key name in Secrets Manager (`S3_BUCKET`) and the environment variable my config was reading (`AWS_S3_BUCKET`). The ECS task definition pulls specific JSON keys from the secret and injects them as environment variables, and those names need to match exactly. When they don't, the container refuses to start with a cryptic initialization error that doesn't tell you which key is missing.
+The local backend had `CORS_ALLOWED_ORIGINS=http://localhost:5173` in the `.env` file. Production needed `https://stitchproject.chelseymachin.com` as well. The problem is that the `Access-Control-Allow-Origin` response header has to be a single origin value. Browsers reject a comma-separated list. So you cannot just concatenate your allowed origins and call it done.
 
-The lesson: keep your secret key names and your environment variable names identical and document them somewhere. Future you will thank present you.
+The correct approach is to read the `Origin` header from the incoming request, check it against your allowed list, and echo it back if it matches. I stored the allowed origins as a comma-separated env var, split it at startup into a slice, and then in the CORS middleware did a lookup against that slice for each incoming request.
 
-***The Private Subnet Migration Problem***
-
-Running migrations against a database in a private subnet with no public access is genuinely tricky. I went through several approaches: trying to connect from localhost (blocked by the subnet), trying AWS CloudShell (not in the VPC), trying EC2 Instance Connect (needed the right AMI and security group setup). Eventually I landed on a bastion EC2 instance, which works fine but feels like a lot of ceremony for what should be a simple task.
-
-The long term solution is what I described earlier: migrations embedded in the container. But the path to getting there was more adventure than I expected.
-
-***PowerShell and JSON***
-
-If you're on Windows and you're working with the AWS CLI, be prepared for PowerShell to mangle your JSON strings in creative ways. Single quotes, double quotes, BOM characters, all of it. The solution that actually works consistently is writing your JSON to a file with `[System.IO.File]::WriteAllText()` and passing the file path with `file://` to the CLI.  Helpful when you're troubleshooting a bunch of terraform and AWS CLI steps and outcomes for sure.
+What actually happened in practice: the production CORS config did not include the production domain for longer than it should have because the env var was set in Secrets Manager but the ECS task definition did not have a corresponding `secrets` entry to inject it into the container. The fix was adding `CORS_ALLOWED_ORIGINS` to the `secrets` block in `ecs.tf` and running `terraform apply`. Standard stuff, but it required tracing the full path from "env var set in Secrets Manager" to "env var available inside the container" to figure out where the chain was broken.
 
 ---
 
-**Design Decisions**
+**The GitHub Actions OIDC Secret Placement Gotcha**
 
-I wanted Stitch Project to feel like a real product, not a developer side project. The design uses a warm cream and blush palette with plum accents, neobrutalist inspired borders, and display typography that has a little personality. It's feminine without being saccharine, which is a line I care about.
+CI/CD for this project uses GitHub Actions with OIDC authentication to AWS. No long-lived access keys, just a trust relationship between the GitHub Actions runner and an IAM role.
 
-<img src="/images/posts/stitch-project-03.png" alt="Close up of the pattern detail view showing the gallery, tags, and measurement boxes" width="100%" height="100%" />
+The setup is straightforward in theory. In practice, there is one genuinely non-obvious thing: the `AWS_ROLE_ARN` secret needs to be a **repository secret**, not an **environment secret**. If your workflow does not declare `environment:` in the job definition, scoped environment secrets are invisible to it and the OIDC credential step will silently fail with a generic auth error.
 
-
-The filter sidebar uses chip selectors instead of dropdowns for garment type and fabric because chips make the currently active filters immediately visible at a glance. You shouldn't have to open a dropdown to know what you've filtered by.
-
-The admin interface matches the main app's visual language intentionally. A lot of admin panels feel like they belong to a completely different application, which I find disorienting. If I'm going to spend time adding patterns, it should feel nice to use.
+This cost me longer than I want to admit. Once the secret was in the right place the CI pipeline ran end to end on the first try.
 
 ---
 
-**What's Coming Next**
+**Deploying the Frontend**
 
-This is where I get excited, because the current version is genuinely just the foundation.
+The frontend build and deploy workflow is comparatively calm. On a push to `main` with changes under `frontend/**`, GitHub Actions runs `npm run build`, syncs the dist folder to the S3 bucket with `--delete` to clean up old files, and then invalidates the CloudFront cache so users get the new version. The whole thing takes about two minutes.
 
-***A real community feed.*** Right now Stitch Project has accounts and project logging, but the social layer is still thin. The vision is a home feed where you can follow other sewists, see recent projects from people you follow, and discover makers whose taste matches yours. This is the Ravelry core feature I most want to build.
-
-***Pattern reviews and ratings.*** The difficulty field currently lives on projects (how hard did *you* find it) but I want aggregated community ratings on the pattern itself, plus written reviews. Being able to read "graded very small, size up two" or "the instructions are confusing for the collar but the fit is great" before buying a pattern is genuinely useful and something the sewing community currently shares informally in Facebook groups and blog posts.
-
-***Fabric stash tracking.*** A proper fabric inventory where you can log yardage, note what you've used it for, and get suggestions for which stash fabrics would work for a pattern based on its fabric tags. This is the feature I want most personally.
-
-***Mobile app.*** The web app is responsive but a native mobile experience for logging projects on the go (you just finished sewing something and you want to log it while you're still at the machine) would be genuinely useful. This is further out on the roadmap but it's on the list.
-
-<img src="/images/posts/stitch-project-04.png" alt="Screenshot of the project form showing the photo upload zone and difficulty stars" width="100%" height="100%" />
+One thing to be aware of: CloudFront cache invalidations take two to three minutes to propagate globally. If you push a fix and immediately check the production URL and see the old version, give it a minute before assuming something went wrong. Checking `index.html` in the bucket directly is a fast way to confirm the S3 sync actually ran before CloudFront has finished invalidating.
 
 ---
 
-**Final Thoughts**
+**What I Would Do Differently**
 
-Building Stitch Project taught me more about production AWS infrastructure in a few weeks than I'd learned in the previous couple of years of reading about it. There's a real difference between understanding how ECS and VPCs and Secrets Manager work conceptually and having actually debugged a container that wouldn't start because of a key name mismatch at 11pm.
+A few things I would revisit:
 
-The sewist community deserves the tools that knitters have had for years. The codebase is solid, the infrastructure is in place, and I have a long list of features I'm genuinely excited to build. If you sew and you want to try it out, you can sign up at [stitchproject.chelseymachin.com](https://stitchproject.chelseymachin.com). I'd love to know what you think.
+The `ignore_changes` flag on the ECS service is useful but the implicit contract it creates (Terraform registers new task definitions but does not update the running service) is easy to forget. I would add a comment in the Terraform code documenting this behavior explicitly so future-me does not debug it again.
 
-More posts to come as the features ship 🧵
+I would also not add `migrations/` to `.dockerignore` at all, regardless of build time. The cost of rebuilding the migrations layer occasionally is much lower than the cost of debugging why migrations are not running in production.
+
+The S3 credential handling could also be cleaner. Rather than branching on whether credentials are present, I could just always use the default credential chain and configure static credentials locally via `~/.aws/credentials` or the standard `AWS_*` env vars. That would make the code simpler and keep the local dev setup consistent with how the AWS SDK is meant to work.
+
+---
+
+**Wrapping Up**
+
+Stitch is live. The patterns are in the database, the filter sidebar works, photos upload, favorites persist, and I can browse my own sewing pattern collection from anywhere. It took a lot of CORS errors and task definition archaeology to get here but that is kind of the point of solo projects.
+
+If you sew and want an account, find me online. And if you are building something similar and hit the ECS task definition drift problem, I hope this saves you an afternoon.
+
+<div>
+    <a href="https://github.com/chelseymachin/stitch" target="_blank">GitHub Repo</a>
+</div>
+<div>
+    <a href="https://stitchproject.chelseymachin.com" target="_blank">Stitch Project - Live</a>
+</div>
+
+<div align="center">
+    <img src="/images/posts/stitch-project-07.gif" alt="browse view with patterns loaded and the filter sidebar visible" width="80%" height="80%" />
+</div>
